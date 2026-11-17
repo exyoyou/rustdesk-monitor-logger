@@ -17,6 +17,8 @@ object Log {
 
     private const val DIR_NAME = "Logs"
     private const val MAX_LOG_FILE_SIZE = 1 * 1024 * 1024
+    // 日志上传失败时本地会一直堆积，超过总量就删最旧的
+    private const val MAX_LOG_DIR_SIZE = 50L * 1024 * 1024
 
     private var logDir: File? = null
     private var currentLogFile: File? = null
@@ -90,6 +92,7 @@ object Log {
         try {
             val timestamp = fileNameFormat.get()!!.format(Date())
             currentLogFile = File(logDir, "monitor_$timestamp.log")
+            trimLogDir()
 
             writeToFile("========================================")
             writeToFile("Screen Monitor Log")
@@ -97,6 +100,21 @@ object Log {
             writeToFile("========================================")
         } catch (e: Exception) {
             AndroidLog.e(TAG, "创建日志文件失败：${e.message}", e)
+        }
+    }
+
+    private fun trimLogDir() {
+        try {
+            val files = logDir?.listFiles { f -> f.isFile && f.name.endsWith(".log") && f != currentLogFile }
+                ?.sortedBy { it.lastModified() } ?: return
+            var total = files.sumOf { it.length() }
+            for (file in files) {
+                if (total <= MAX_LOG_DIR_SIZE) break
+                val size = file.length()
+                if (file.delete()) total -= size
+            }
+        } catch (e: Exception) {
+            AndroidLog.e(TAG, "清理旧日志失败：${e.message}", e)
         }
     }
 
@@ -181,9 +199,9 @@ object Log {
         writeToFileAsync(formatMessage("E", tag, "$message\n$stackTrace"))
     }
 
+    // verbose 用在每帧都会触发的位置，只输出到 logcat，不写文件
     fun v(tag: String, message: String) {
         AndroidLog.v(tag, message)
-        writeToFileAsync(formatMessage("V", tag, message))
     }
 
     fun getLogDirectory(): String? = logDir?.absolutePath
